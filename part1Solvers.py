@@ -126,6 +126,11 @@ def proof_by_unsat():
     s = Solver()
 
     # TODO: YOUR CODE HERE
+    # write up formula
+    formula = Implies(y > 0, x + y > x)
+    # add the negation of the formula to the solver
+    # want to ask if there is any way for the formula to be false 
+    s.add(Not(formula))
 
     match s.check():
         case z3.unsat:
@@ -144,7 +149,14 @@ def demorgans_proof():
         Print "No counterexample can be found, therefore the statement is true" if the given formula f is true, otherwise print "The formula f is false, with counterexample given by: " and the model that shows the formula to be false.
         """
         # TODO: YOUR CODE HERE
-        pass
+        s = Solver()
+        s.add(Not(f))
+
+        match s.check():
+            case z3.unsat:
+                print("No counterexample can be found, therefore the statement is true")
+            case z3.sat:
+                print(f"The formula f is false, with counterexample given by: {s.model()}")
 
     prove(demorgan)
 
@@ -177,6 +189,34 @@ def wedding_planning():
     """
     #TODO: YOUR CODE HERE
 
+    Alice = Int('Alice')
+    Bob = Int('Bob')
+    Charlie = Int('Charlie')
+
+    s = Solver()
+
+    clause_1 = And(
+        Alice >= 0, Alice <= 2,
+        Bob >= 0, Bob <= 2,
+        Charlie >= 0, Charlie <= 2)
+    clause_2 = Or(Alice != Charlie + 1, Alice != Charlie - 1)
+    clause_3 = Not(Alice == 0)
+    clause_4 = Bob < Charlie
+    clause_5 = Distinct(Alice, Bob, Charlie)
+
+    s.add(clause_1)
+    s.add(clause_2)
+    s.add(clause_3)
+    s.add(clause_4)
+    s.add(clause_5)
+
+    match s.check():
+        case z3.sat:
+            model = s.model()
+            seating = {model[Alice].as_long(): "Alice", model[Bob].as_long(): "Bob", model[Charlie].as_long(): "Charlie"}
+            print(f"{seating[0]} sits on the left, {seating[1]} in the middle, and {seating[2]} on the right.")
+        case z3.unsat:
+            print("There is no acceptable seating arraignment")
 
 
 
@@ -239,3 +279,12 @@ def coin_sum(total):
     Hint: You may need to run many related but slightly different model checks.
     """
     # TODO: YOUR CODE HERE
+if __name__ == "__main__":
+    print("Testing proof_by_unsat:")
+    proof_by_unsat()
+
+    print("\nTesting demorgans_proof:")
+    demorgans_proof()
+
+    print("\nTesting wedding_planning:")
+    wedding_planning()
