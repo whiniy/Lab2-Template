@@ -243,6 +243,37 @@ def sudoku(puzzle):
     Use print_sudoku to print your solution to puzzle or otherwise print "The puzzle is impossible.".
     """
     #TODO: YOUR CODE HERE
+    # create variables for each cell in grid
+    cells = [[Int(f'cell_{i}_{j}') for j in range(9)] for i in range(9)]
+    s = Solver()
+    # add bounds for each cell to be between 1 and 9
+    for i in range(9):
+        for j in range(9):
+            s.add(And(cells[i][j] >= 1, cells[i][j] <= 9))
+    
+    # add constraints for rows, columns, and boxes to have distinct values
+    # there should only be one 1, 2, 3, and so on in each row, column, and box
+    for i in range(9):
+        # add row constraints
+        s.add(Distinct(cells[i])) 
+        # add column constraints
+        s.add(Distinct([cells[j][i] for j in range(9)]))
+    
+    # add 3x3 box constraints
+    for row in range(3):
+        for col in range(3):
+            box_cells = [cells[i][j] for i in range(row*3, row*3+3) for j in range(col*3, col*3+3)]
+            s.add(Distinct(box_cells))
+    
+
+    # check if puzzle is satisfiable
+    match s.check():
+        case z3.unsat: 
+            print("The puzzle is impossible.")
+        case z3.sat:
+            model = s.model()
+            solution = [[model[cells[i][j]].as_long() for j in range(9)] for i in range(9)]
+            print_sudoku(solution)
 
 
 
@@ -278,13 +309,23 @@ def coin_sum(total):
 
     Hint: You may need to run many related but slightly different model checks.
     """
-    # TODO: YOUR CODE HERE
-if __name__ == "__main__":
-    print("Testing proof_by_unsat:")
-    proof_by_unsat()
+    s = Solver()
+    clause1 = And(p >= 0, n >= 0, d >= 0, q >= 0, f >= 0, c >= 0)
+    clause2 = p + 5*n + 10*d + 25*q + 50*f + 100*c == total
+    s.add(clause1)
+    s.add(clause2)
 
-    print("\nTesting demorgans_proof:")
-    demorgans_proof()
+    count = 0
 
-    print("\nTesting wedding_planning:")
-    wedding_planning()
+    while s.check() == z3.sat:
+        count += 1
+        model = s.model()
+
+        # add a constraint to block the current solution
+        block = []
+        for var in [p, n, d, q, f, c]:
+            # atleast one variable must be different from current solution
+            block.append(var != model[var])
+        s.add(Or(block))
+    
+    print(count)
