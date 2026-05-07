@@ -19,8 +19,17 @@ class PuzzleWizard(WizardAgent):
 
     def react(self, state: GameState) -> WizardMoves:
         # keep plan saved if we have one, otherwise create a new plan
+        if hasattr(self, "finished") and self.finished:
+            raise Exception("Puzzle already solved; no more moves needed.")
+
+        # if we already solved the puzzle, keep following the saved plan
         if hasattr(self, "plan") and len(self.plan) > 0:
-            return self.plan.pop(0)
+            move = self.plan.pop(0)
+
+            if len(self.plan) == 0:
+                self.finished = True
+
+            return move
 
         # get all fire stone locations on board
         fire_stones = state.get_all_tile_locations(FireStone)
@@ -273,9 +282,9 @@ class PuzzleWizard(WizardAgent):
             r1, c1 = path[i]
             r2, c2 = path[i + 1]
 
-            if r2 == r1 + 1 and c2 == c1:
+            if r2 == r1 - 1 and c2 == c1:
                 moves.append(WizardMoves.UP)
-            elif r2 == r1 - 1 and c2 == c1:
+            elif r2 == r1 + 1 and c2 == c1:
                 moves.append(WizardMoves.DOWN)
             elif r2 == r1 and c2 == c1 - 1:
                 moves.append(WizardMoves.LEFT)
@@ -285,8 +294,14 @@ class PuzzleWizard(WizardAgent):
                 raise Exception("Invalid move in path.")
 
         self.plan = moves
+        self.finished = False
 
-        return self.plan.pop(0)
+        move = self.plan.pop(0)
+
+        if len(self.plan) == 0:
+            self.finished = True
+
+        return move
 
 
 
