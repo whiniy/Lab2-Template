@@ -273,9 +273,9 @@ class PuzzleWizard(WizardAgent):
             r1, c1 = path[i]
             r2, c2 = path[i + 1]
 
-            if r2 == r1 - 1 and c2 == c1:
+            if r2 == r1 + 1 and c2 == c1:
                 moves.append(WizardMoves.UP)
-            elif r2 == r1 + 1 and c2 == c1:
+            elif r2 == r1 - 1 and c2 == c1:
                 moves.append(WizardMoves.DOWN)
             elif r2 == r1 and c2 == c1 - 1:
                 moves.append(WizardMoves.LEFT)
