@@ -358,11 +358,10 @@ class PuzzleWizard(WizardAgent):
 class SpellCastingPuzzleWizard(WizardAgent):
 
     def react(self, state: GameState) -> GameAction:
-        # keep following the plan if we already have one
+        # keep following the plan if we already made one
         if hasattr(self, "plan") and len(self.plan) > 0:
             return self.plan.pop(0)
 
-        # get stone locations
         fire_stones = state.get_all_tile_locations(FireStone)
         ice_stones = state.get_all_tile_locations(IceStone)
         neutral_stones = state.get_all_tile_locations(NeutralStone)
@@ -378,7 +377,7 @@ class SpellCastingPuzzleWizard(WizardAgent):
         wizard_location = state.active_entity_location
         start = (wizard_location.row, wizard_location.col)
 
-        # store original stone types as tuple locations
+        # store original stone types
         original_types = {}
 
         for stone in fire_stones:
@@ -391,6 +390,14 @@ class SpellCastingPuzzleWizard(WizardAgent):
             original_types[(stone.row, stone.col)] = "neutral"
 
         all_stone_locations = set(original_types.keys())
+
+        blocked_cells = set()
+
+        for r in range(rows):
+            for c in range(cols):
+                tile = state.tile_grid[r][c]
+                if type(tile).__name__ == "Wall":
+                    blocked_cells.add((r, c))
 
         s = Solver()
 
@@ -424,13 +431,13 @@ class SpellCastingPuzzleWizard(WizardAgent):
             return edges
 
         def numEdges(edges):
-            return Sum([If(edge, 1, 0) for edge in edges])
+            return z3.Sum([If(edge, 1, 0) for edge in edges])
 
         def directionalEdges(r, c):
-            left = horizontalEdges.get((r, c - 1), BoolVal(False))
-            right = horizontalEdges.get((r, c), BoolVal(False))
-            up = verticalEdges.get((r - 1, c), BoolVal(False))
-            down = verticalEdges.get((r, c), BoolVal(False))
+            left = horizontalEdges.get((r, c - 1), z3.BoolVal(False))
+            right = horizontalEdges.get((r, c), z3.BoolVal(False))
+            up = verticalEdges.get((r - 1, c), z3.BoolVal(False))
+            down = verticalEdges.get((r, c), z3.BoolVal(False))
 
             return left, right, up, down
 
@@ -456,15 +463,20 @@ class SpellCastingPuzzleWizard(WizardAgent):
             )
 
         # every cell is either unused or has exactly 2 edges
+        # wall cells are unused
         for row in range(rows):
             for col in range(cols):
                 n = numEdges(isTouching(row, col))
-                s.add(Or(n == 0, n == 2))
 
-        # wizard start must be part of the loop
+                if (row, col) in blocked_cells:
+                    s.add(n == 0)
+                else:
+                    s.add(Or(n == 0, n == 2))
+
+        # start must be part of the loop
         s.add(isUsed(start[0], start[1]))
 
-        # every stone must be used
+        # every stone must be part of the loop
         for r, c in all_stone_locations:
             s.add(isUsed(r, c))
 
@@ -482,7 +494,12 @@ class SpellCastingPuzzleWizard(WizardAgent):
                 current = (row, col)
 
                 s.add(Implies(Not(isUsed(row, col)), order[current] == 0))
-                s.add(Implies(isUsed(row, col), And(order[current] >= 0, order[current] <= rows * cols)))
+                s.add(
+                    Implies(
+                        isUsed(row, col),
+                        And(order[current] >= 0, order[current] <= rows * cols)
+                    )
+                )
 
                 if current != start:
                     left, right, up, down = directionalEdges(row, col)
@@ -515,14 +532,13 @@ class SpellCastingPuzzleWizard(WizardAgent):
                         )
                     )
 
-        # True means the final stone type is fire.
-        # False means the final stone type is ice.
+        # True means final type is fire
+        # False means final type is ice
         finalIsFire = {}
 
         for r, c in all_stone_locations:
             finalIsFire[(r, c)] = Bool(f"final_fire_{r}_{c}")
 
-        # add fire/ice behavior constraints depending on final stone type
         for r, c in all_stone_locations:
             left, right, up, down = directionalEdges(r, c)
 
@@ -589,11 +605,11 @@ class SpellCastingPuzzleWizard(WizardAgent):
                 cost_terms.append(If(finalIsFire[loc], 15, 10))
 
         if len(cost_terms) > 0:
-            total_cost = Sum(cost_terms)
+            total_cost = z3.Sum(cost_terms)
         else:
-            total_cost = IntVal(0)
+            total_cost = z3.IntVal(0)
 
-        # Generate all possible mana costs.
+        # build possible exact mana costs.
         possible_costs = {0}
 
         for loc in all_stone_locations:
@@ -616,27 +632,29 @@ class SpellCastingPuzzleWizard(WizardAgent):
 
         possible_costs = sorted(possible_costs)
 
-        model = None
+        chosen_model = None
 
         for target_cost in possible_costs:
             s.push()
             s.add(total_cost == target_cost)
 
-            if s.check() == sat:
-                model = s.model()
+            if s.check() == z3.sat:
+                chosen_model = s.model()
                 s.pop()
                 break
 
             s.pop()
 
-        if model is None:
-            return WizardMoves.UP
+        if chosen_model is None:
+            raise Exception("SpellCastingPuzzleWizard could not find a solution.")
 
-        # build final spell changes from the model
+        model = chosen_model
+
+        # build spell changes from model
         spell_changes = {}
 
         for loc in all_stone_locations:
-            final_fire = is_true(model.eval(finalIsFire[loc], model_completion=True))
+            final_fire = z3.is_true(model.eval(finalIsFire[loc], model_completion=True))
             original = original_types[loc]
 
             if final_fire:
@@ -646,7 +664,7 @@ class SpellCastingPuzzleWizard(WizardAgent):
                 if original != "ice":
                     spell_changes[loc] = WizardSpells.FREEZE
 
-        # create adjacency from chosen edges
+        # build adjacency from selected Z3 edges
         adjacency = {}
 
         def addConn(a, b):
@@ -660,27 +678,27 @@ class SpellCastingPuzzleWizard(WizardAgent):
             adjacency[b].append(a)
 
         for (r, c), edge in horizontalEdges.items():
-            if is_true(model.eval(edge, model_completion=True)):
+            if z3.is_true(model.eval(edge, model_completion=True)):
                 addConn((r, c), (r, c + 1))
 
         for (r, c), edge in verticalEdges.items():
-            if is_true(model.eval(edge, model_completion=True)):
+            if z3.is_true(model.eval(edge, model_completion=True)):
                 addConn((r, c), (r + 1, c))
 
         if start not in adjacency:
-            return WizardMoves.UP
+            raise Exception("Wizard start is not in the solution path.")
 
-        # trace the loop from the start
+        # trace the loop from start
         path = [start]
         previous = None
         current = start
-        closedLoop = False
+        closed_loop = False
 
         for _ in range(rows * cols + 1):
             neighbors = adjacency.get(current, [])
 
             if len(neighbors) != 2:
-                return WizardMoves.UP
+                raise Exception("Invalid path: cell does not have exactly 2 neighbors.")
 
             if previous is None:
                 nextCell = neighbors[0]
@@ -691,84 +709,75 @@ class SpellCastingPuzzleWizard(WizardAgent):
                     nextCell = neighbors[0]
 
             if nextCell == start:
-                closedLoop = True
+                closed_loop = True
                 break
 
             if nextCell in path:
-                return WizardMoves.UP
+                raise Exception(f"Invalid path: revisits {nextCell} before closing.")
 
             path.append(nextCell)
             previous = current
             current = nextCell
 
-        if not closedLoop:
-            return WizardMoves.UP
+        if not closed_loop:
+            raise Exception("Invalid path: did not return to start.")
 
         usedCells = set(adjacency.keys())
         pathCells = set(path)
 
         if usedCells != pathCells:
-            return WizardMoves.UP
+            raise Exception("Invalid path: disconnected loop.")
 
         if not all_stone_locations.issubset(pathCells):
-            return WizardMoves.UP
+            missing = all_stone_locations - pathCells
+            raise Exception(f"Invalid path: missing stones {missing}")
 
-        # close loop by adding start to end
+        # close loop
         path.append(start)
 
-        possible_moves = [
-            WizardMoves.UP,
-            WizardMoves.DOWN,
-            WizardMoves.LEFT,
-            WizardMoves.RIGHT
-        ]
-
+        # convert path into WizardMoves
         moves = []
+        destinations = []
 
         for i in range(len(path) - 1):
             r1, c1 = path[i]
             r2, c2 = path[i + 1]
 
-            dr = r2 - r1
-            dc = c2 - c1
+            if r2 == r1 - 1 and c2 == c1:
+                move = WizardMoves.UP
+            elif r2 == r1 + 1 and c2 == c1:
+                move = WizardMoves.DOWN
+            elif r2 == r1 and c2 == c1 - 1:
+                move = WizardMoves.LEFT
+            elif r2 == r1 and c2 == c1 + 1:
+                move = WizardMoves.RIGHT
+            else:
+                raise Exception(f"Could not convert {(r1, c1)} -> {(r2, c2)} into a move.")
 
-            foundMove = None
+            moves.append(move)
+            destinations.append((r2, c2))
 
-            for move in possible_moves:
-                move_dr, move_dc = move.value
-
-                if move_dr == dr and move_dc == dc:
-                    foundMove = move
-                    break
-
-            if foundMove is None:
-                return WizardMoves.UP
-
-            moves.append(foundMove)
-
-        # add spells into the movement plan
+        # build final action plan.
         plan = []
         already_cast = set()
 
-        # if the starting tile needs a spell, cast immediately
-        if path[0] in spell_changes:
-            plan.append(spell_changes[path[0]])
-            already_cast.add(path[0])
-
         for i in range(len(moves)):
-            destination = path[i + 1]
+            move = moves[i]
+            destination = destinations[i]
 
-            # cast before stepping onto the destination stone
+            plan.append(move)
+
             if destination in spell_changes and destination not in already_cast:
                 plan.append(spell_changes[destination])
                 already_cast.add(destination)
 
-            plan.append(moves[i])
+        if len(plan) == 0:
+            raise Exception("Generated an empty plan.")
+
+        if not isinstance(plan[0], WizardMoves):
+            raise Exception("First action is not a movement, which can cause turn 0 failure.")
 
         self.plan = plan
-
-        if len(self.plan) == 0:
-            return WizardMoves.UP
 
         return self.plan.pop(0)
 
