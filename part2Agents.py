@@ -392,7 +392,6 @@ class SpellCastingPuzzleWizard(WizardAgent):
 
         all_stone_locations = set(original_types.keys())
 
-        # Use Solver, not Optimize
         s = Solver()
 
         horizontalEdges = {}
@@ -490,21 +489,34 @@ class SpellCastingPuzzleWizard(WizardAgent):
                     lower_neighbors = []
 
                     if col - 1 >= 0:
-                        lower_neighbors.append(And(left, order[(row, col - 1)] < order[current]))
+                        lower_neighbors.append(
+                            And(left, order[(row, col - 1)] < order[current])
+                        )
 
                     if col + 1 < cols:
-                        lower_neighbors.append(And(right, order[(row, col + 1)] < order[current]))
+                        lower_neighbors.append(
+                            And(right, order[(row, col + 1)] < order[current])
+                        )
 
                     if row - 1 >= 0:
-                        lower_neighbors.append(And(up, order[(row - 1, col)] < order[current]))
+                        lower_neighbors.append(
+                            And(up, order[(row - 1, col)] < order[current])
+                        )
 
                     if row + 1 < rows:
-                        lower_neighbors.append(And(down, order[(row + 1, col)] < order[current]))
+                        lower_neighbors.append(
+                            And(down, order[(row + 1, col)] < order[current])
+                        )
 
-                    s.add(Implies(isUsed(row, col), And(order[current] > 0, Or(*lower_neighbors))))
+                    s.add(
+                        Implies(
+                            isUsed(row, col),
+                            And(order[current] > 0, Or(*lower_neighbors))
+                        )
+                    )
 
-        # True means final stone type is fire
-        # False means final stone type is ice
+        # True means the final stone type is fire.
+        # False means the final stone type is ice.
         finalIsFire = {}
 
         for r, c in all_stone_locations:
@@ -581,7 +593,7 @@ class SpellCastingPuzzleWizard(WizardAgent):
         else:
             total_cost = IntVal(0)
 
-        # generate possible mana costs.
+        # Generate all possible mana costs.
         possible_costs = {0}
 
         for loc in all_stone_locations:
@@ -604,7 +616,6 @@ class SpellCastingPuzzleWizard(WizardAgent):
 
         possible_costs = sorted(possible_costs)
 
-        # try cheapest mana costs first
         model = None
 
         for target_cost in possible_costs:
@@ -739,19 +750,20 @@ class SpellCastingPuzzleWizard(WizardAgent):
         plan = []
         already_cast = set()
 
-        # cast before moving if the starting tile needs a spell
+        # if the starting tile needs a spell, cast immediately
         if path[0] in spell_changes:
             plan.append(spell_changes[path[0]])
             already_cast.add(path[0])
 
         for i in range(len(moves)):
+            destination = path[i + 1]
+
+            # cast before stepping onto the destination stone
+            if destination in spell_changes and destination not in already_cast:
+                plan.append(spell_changes[destination])
+                already_cast.add(destination)
+
             plan.append(moves[i])
-
-            arrived = path[i + 1]
-
-            if arrived in spell_changes and arrived not in already_cast:
-                plan.append(spell_changes[arrived])
-                already_cast.add(arrived)
 
         self.plan = plan
 
@@ -759,7 +771,6 @@ class SpellCastingPuzzleWizard(WizardAgent):
             return WizardMoves.UP
 
         return self.plan.pop(0)
-
 
 
 """
