@@ -28,6 +28,13 @@ class PuzzleWizard(WizardAgent):
         ice_stones = state.get_all_tile_locations(IceStone)
         # get grid size
         grid_size = state.grid_size
+        # handle grid_size if it is a tuple like (rows, cols)
+        if isinstance(grid_size, tuple):
+            rows, cols = grid_size
+        else:
+            rows = grid_size
+            cols = grid_size
+
         # get wizard location
         wizard_location = state.active_entity_location
         # get the starting location of the wizard as (row, col)
@@ -41,19 +48,21 @@ class PuzzleWizard(WizardAgent):
         verticalEdges = {}
 
         # create all possible horizontal and vertical edges
-        # iterate through each cell of the board
-        for row in range(grid_size):
-            for col in range(grid_size):
-                # horizontal edge - (row, col) to (row, col + 1)
-                if col < grid_size - 1:
+        for row in range(rows):
+            for col in range(cols):
+
+                # horizontal edge: (row, col) to (row, col + 1)
+                if col < cols - 1:
                     horizontalEdges[(row, col)] = Bool(f"h{row}_{col}")
-                # vertical edge - (row, col) to (row + 1, col)
-                if row < grid_size - 1:
+
+                # vertical edge: (row, col) to (row + 1, col)
+                if row < rows - 1:
                     verticalEdges[(row, col)] = Bool(f"v{row}_{col}")
 
         # get all possible paths touching the cell
         def isTouching(r, c):
             edges = []
+
             # left edge: (r, c - 1) to (r, c)
             if (r, c - 1) in horizontalEdges:
                 edges.append(horizontalEdges[(r, c - 1)])
@@ -73,7 +82,7 @@ class PuzzleWizard(WizardAgent):
         def numEdges(edges):
             return sum([If(edge, 1, 0) for edge in edges])
 
-        # gets every edge in every direction and returns it (left, right, up, down)
+        # gets every edge in every direction and returns it as left, right, up, down
         def directionalEdges(r, c):
             left = horizontalEdges.get((r, c - 1), z3.BoolVal(False))
             right = horizontalEdges.get((r, c), z3.BoolVal(False))
@@ -86,31 +95,36 @@ class PuzzleWizard(WizardAgent):
         def isStraight(r, c):
             left, right, up, down = directionalEdges(r, c)
 
-            return Or(And(left, right),
-                      And(up, down))
+            return Or(
+                And(left, right),
+                And(up, down)
+            )
 
         # checks if a path turns at the cell
         def isTurn(r, c):
             left, right, up, down = directionalEdges(r, c)
 
-            return Or(And(left, up),
-                      And(left, down),
-                      And(right, up),
-                      And(right, down))
+            return Or(
+                And(left, up),
+                And(left, down),
+                And(right, up),
+                And(right, down)
+            )
 
-        # every cell should have 0 or 2 edges, indicating it's either
-        # not part of the path or is part of the path and connects to 2 other cells
-        for row in range(grid_size):
-            for col in range(grid_size):
+        # every cell should have 0 or 2 edges
+        # 0 means not part of the path
+        # 2 means part of the path
+        for row in range(rows):
+            for col in range(cols):
                 edges = isTouching(row, col)
                 n = numEdges(edges)
 
                 s.add(Or(n == 0, n == 2))
 
-        # add wizard's starting position contraint
+        # add wizard's starting position constraint
         s.add(numEdges(isTouching(start[0], start[1])) == 2)
 
-        # fire stones contraints
+        # fire stone constraints
         for stone in fire_stones:
             r = stone.row
             c = stone.col
@@ -121,52 +135,47 @@ class PuzzleWizard(WizardAgent):
             s.add(numEdges(isTouching(r, c)) == 2)
             s.add(isTurn(r, c))
 
-            # if fire stone connects left and up
+            # if fire stone connects left and up,
             # left and up neighbors must be straight
             s.add(Implies(
                 And(left, up),
                 And(isStraight(r, c - 1), isStraight(r - 1, c))
             ))
-
-            # if the fire stone connects left + down
+            # if fire stone connects left and down
             s.add(Implies(
                 And(left, down),
                 And(isStraight(r, c - 1), isStraight(r + 1, c))
             ))
-
-            # if the fire stone connects right + up
+            # if fire stone connects right and up
             s.add(Implies(
                 And(right, up),
                 And(isStraight(r, c + 1), isStraight(r - 1, c))
             ))
-
-            # if the fire stone connects right + down
+            # if fire stone connects right and down
             s.add(Implies(
                 And(right, down),
                 And(isStraight(r, c + 1), isStraight(r + 1, c))
             ))
 
-        # ice stones must have 1 neighbor edge that turns and 1 neighbor edge that goes straight
-        # ice stone itself must be straight
+        # ice stone constraints
         for stone in ice_stones:
             r = stone.row
             c = stone.col
 
             left, right, up, down = directionalEdges(r, c)
 
-            # ice stone must be on the path and must have 2 edges
-            # ice stone has to go straight
+            # ice stone must be on the path and must go straight
             s.add(numEdges(isTouching(r, c)) == 2)
             s.add(isStraight(r, c))
 
-            # if ice stone goes left-right
+            # if ice stone goes left-right,
             # left or right neighbor must turn
             s.add(Implies(
                 And(left, right),
                 Or(isTurn(r, c - 1), isTurn(r, c + 1))
             ))
 
-            # if ice stone goes up-down
+            # if ice stone goes up-down,
             # up or down neighbor must turn
             s.add(Implies(
                 And(up, down),
@@ -200,17 +209,16 @@ class PuzzleWizard(WizardAgent):
                 if z3.is_true(model.eval(edge, model_completion=True)):
                     addConn((r, c), (r + 1, c))
 
-            # trace the loop for the solution and make sure it's valid
+            # trace the loop for the solution and make sure it is valid
             if start not in adjacency:
                 raise Exception("Wizard start is not part of the solution path.")
 
             path = [start]
             previous = None
             current = start
-
             validPath = True
 
-            for _ in range(grid_size * grid_size + 1):
+            for _ in range(rows * cols + 1):
                 neighbors = adjacency[current]
 
                 if len(neighbors) != 2:
@@ -238,14 +246,14 @@ class PuzzleWizard(WizardAgent):
                 current = nextCell
 
             # check if path uses all cells in the solution
-            # if not, there are multiple loops
+            # if not, there are multiple disconnected loops
             usedCells = set(adjacency.keys())
             pathCells = set(path)
 
             if validPath and path[-1] == start and usedCells == pathCells:
                 break
 
-            # block if there's multiple disconnected loops
+            # block this exact solution if there are multiple disconnected loops
             block = []
 
             for edge in horizontalEdges.values():
@@ -258,7 +266,7 @@ class PuzzleWizard(WizardAgent):
 
             s.add(Or(block))
 
-        # convert into moves for wizard to take 
+        # convert path into moves for wizard to take
         moves = []
 
         for i in range(len(path) - 1):
