@@ -278,30 +278,37 @@ class PuzzleWizard(WizardAgent):
         # convert path into moves for wizard to take
         moves = []
 
+        possible_moves = [
+            WizardMoves.UP,
+            WizardMoves.DOWN,
+            WizardMoves.LEFT,
+            WizardMoves.RIGHT
+        ]
+
         for i in range(len(path) - 1):
             r1, c1 = path[i]
             r2, c2 = path[i + 1]
 
-            if r2 == r1 - 1 and c2 == c1:
-                moves.append(WizardMoves.UP)
-            elif r2 == r1 + 1 and c2 == c1:
-                moves.append(WizardMoves.DOWN)
-            elif r2 == r1 and c2 == c1 - 1:
-                moves.append(WizardMoves.LEFT)
-            elif r2 == r1 and c2 == c1 + 1:
-                moves.append(WizardMoves.RIGHT)
-            else:
+            dr = r2 - r1
+            dc = c2 - c1
+
+            found_move = None
+
+            for move in possible_moves:
+                move_dr, move_dc = move.value
+
+                if move_dr == dr and move_dc == dc:
+                    found_move = move
+                    break
+
+            if found_move is None:
                 raise Exception("Invalid move in path.")
 
+            moves.append(found_move)
+
         self.plan = moves
-        self.finished = False
 
-        move = self.plan.pop(0)
-
-        if len(self.plan) == 0:
-            self.finished = True
-
-        return move
+        return self.plan.pop(0)
 
 
 
